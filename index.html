@@ -51,7 +51,7 @@
 </head>
 <body class="bg-gray-100 text-gray-800">
 
-    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-7xl">
+    <div class="container mx-auto p-4 smp-6 md:p-8 max-w-7xl">
         <header class="text-center mb-8">
             <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">The Document Extractor</h1>
             <p class="text-gray-600 mt-2">Select an engine, then upload a document to extract structured data.</p>
@@ -260,9 +260,10 @@
             const base64ImageData = await toBase64(file);
             const mimeType = file.type;
             
-            let prompt, schema;
+            let prompt, schema, modelName;
 
             if (currentMode === 'invoice') {
+                modelName = 'gemini-pro-vision';
                 prompt = "Analyze this document as an invoice. Extract the invoice number, date, due date, pay date, vendor name, all line items, subtotal, tax, and grandTotal. For each line item, extract the description, quantity, unit price, tax code, location, and item barcode. Return as a single JSON object. All price/cost/total fields should be numbers.";
                 schema = {
                     type: "OBJECT",
@@ -292,6 +293,7 @@
                     }
                 };
             } else { // Price List Mode
+                modelName = 'gemini-pro-vision';
                 prompt = "Analyze this document as a product price list. Extract all items into a JSON array. Each object should represent a single product and include these keys: 'barcode', 'description', 'unitPrice', 'cartonPrice' (look for a header like 'CTN PRICE'), and 'recommendedSellingPrice' (look for a header like 'RSP'). If a value isn't present, use an empty string or null. Prices should be numbers.";
                 schema = {
                     type: "ARRAY",
@@ -327,7 +329,7 @@
                     handleError("API Key is missing. Please add your key to the script.");
                     return;
                 }
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
