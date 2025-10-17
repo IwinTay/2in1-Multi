@@ -260,54 +260,14 @@
             const base64ImageData = await toBase64(file);
             const mimeType = file.type;
             
-            let prompt, schema, modelName;
+            let prompt, modelName;
 
             if (currentMode === 'invoice') {
                 modelName = 'gemini-pro-vision';
-                prompt = "Analyze this document as an invoice. Extract the invoice number, date, due date, pay date, vendor name, all line items, subtotal, tax, and grandTotal. For each line item, extract the description, quantity, unit price, tax code, location, and item barcode. Return as a single JSON object. All price/cost/total fields should be numbers.";
-                schema = {
-                    type: "OBJECT",
-                    properties: {
-                        invoiceNumber: { type: "STRING" },
-                        date: { type: "STRING" },
-                        dueDate: { type: "STRING" },
-                        payDate: { type: "STRING" },
-                        vendor: { type: "STRING" },
-                        lineItems: {
-                            type: "ARRAY",
-                            items: {
-                                type: "OBJECT",
-                                properties: {
-                                    description: { type: "STRING" },
-                                    itemBarcode: { type: "STRING" },
-                                    quantity: { type: "NUMBER" },
-                                    unitPrice: { type: "NUMBER" },
-                                    taxCode: { type: "STRING" },
-                                    location: { type: "STRING" }
-                                }
-                            }
-                        },
-                        subtotal: { type: "NUMBER" },
-                        tax: { type: "NUMBER" },
-                        grandTotal: { type: "NUMBER" }
-                    }
-                };
+                prompt = "Analyze this document as an invoice. Extract the invoice number, date, due date, pay date, vendor name, all line items, subtotal, tax, and grandTotal. For each line item, extract the description, quantity, unit price, tax code, location, and item barcode. Return ONLY the raw JSON object text, with no other words or explanations. All price/cost/total fields should be numbers.";
             } else { // Price List Mode
                 modelName = 'gemini-pro-vision';
-                prompt = "Analyze this document as a product price list. Extract all items into a JSON array. Each object should represent a single product and include these keys: 'barcode', 'description', 'unitPrice', 'cartonPrice' (look for a header like 'CTN PRICE'), and 'recommendedSellingPrice' (look for a header like 'RSP'). If a value isn't present, use an empty string or null. Prices should be numbers.";
-                schema = {
-                    type: "ARRAY",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            barcode: { type: "STRING" },
-                            description: { type: "STRING" },
-                            unitPrice: { type: "NUMBER" },
-                            cartonPrice: { type: "NUMBER" },
-                            recommendedSellingPrice: { type: "NUMBER" }
-                        }
-                    }
-                };
+                prompt = "Analyze this document as a product price list. Extract all items into a JSON array. Each object should represent a single product and include these keys: 'barcode', 'description', 'unitPrice', 'cartonPrice' (look for a header like 'CTN PRICE'), and 'recommendedSellingPrice' (look for a header like 'RSP'). If a value isn't present, use an empty string or null. Prices should be numbers. Return ONLY the raw JSON array text, with no other words or explanations.";
             }
 
             const payload = {
@@ -316,15 +276,11 @@
                         { text: prompt }, 
                         { inlineData: { mimeType: mimeType, data: base64ImageData } } 
                     ] 
-                }],
-                generationConfig: { 
-                    responseMimeType: "application/json", 
-                    responseSchema: schema 
-                }
+                }]
             };
 
             try {
-                const apiKey = "AIzaSyBQHWkld856qR-n7p9qT8qVxxIpU5BXEpQ"; // <-- PASTE YOUR KEY HERE
+                const apiKey = "YOUR_API_KEY_HERE"; // <-- PASTE YOUR KEY HERE
                 if (apiKey === "YOUR_API_KEY_HERE" || !apiKey) {
                     handleError("API Key is missing. Please add your key to the script.");
                     return;
@@ -346,7 +302,10 @@
                     throw new Error("Invalid response structure from AI.");
                 }
 
-                const text = result.candidates[0].content.parts[0].text;
+                // Clean the response text to ensure it's valid JSON
+                let text = result.candidates[0].content.parts[0].text;
+                text = text.trim().replace(/^```json\s*/, '').replace(/```$/, '');
+
                 extractedData = JSON.parse(text);
                 
                 dom.statusEl.textContent = `Extraction complete. Please verify.`;
