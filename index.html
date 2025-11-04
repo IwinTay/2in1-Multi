@@ -1,456 +1,707 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Document Extractor</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- PDF.js Library -->
-    <script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        #upload-box.dragover {
-            border-color: #4f46e5;
-            background-color: #eef2ff;
-        }
-        [contenteditable]:focus {
-            outline: 2px solid #4f46e5;
-            background-color: #f0f2fe;
-            border-radius: 4px;
-        }
-        .hidden { display: none; }
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #4f46e5;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .engine-btn {
-            transition: all 0.2s ease-in-out;
-        }
-        .engine-btn.active {
-            background-color: #4f46e5;
-            color: white;
-            font-weight: 600;
-        }
-        .engine-btn:not(.active) {
-            background-color: #e5e7eb;
-            color: #4b5563;
-        }
-        #invoice-table-container, #price-list-table-container {
-             overflow-x: auto;
-        }
-    </style>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>The Document Extractor</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<!-- PDF.js Library (for PDF -> image rendering) -->
+	<script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
+	<!-- Tesseract.js (Local OCR) -->
+	<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
+	<style>
+		body { font-family: 'Inter', sans-serif; }
+		#upload-box.dragover { border-color: #4f46e5; background-color: #eef2ff; }
+		[contenteditable]:focus { outline: 2px solid #4f46e5; background-color: #f0f2fe; border-radius: 4px; }
+		.hidden { display: none; }
+		.loader { border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+		@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+		.engine-btn { transition: all 0.2s ease-in-out; }
+		.engine-btn.active { background-color: #4f46e5; color: white; font-weight: 600; }
+		.engine-btn:not(.active) { background-color: #e5e7eb; color: #4b5563; }
+		#invoice-table-container, #price-list-table-container { overflow-x: auto; }
+	</style>
 </head>
 <body class="bg-gray-100 text-gray-800">
 
-    <div class="container mx-auto p-4 smp-6 md:p-8 max-w-7xl">
-        <header class="text-center mb-8">
-            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">The Document Extractor</h1>
-            <p class="text-gray-600 mt-2">Select an engine, then upload a document to extract structured data.</p>
-        </header>
+	<div class="container mx-auto p-4 smp-6 md:p-8 max-w-7xl">
+		<header class="text-center mb-8">
+			<h1 class="text-3xl sm:text-4xl font-bold text-gray-900">The Document Extractor</h1>
+			<p class="text-gray-600 mt-2">Select an engine, then upload a document to extract structured data.</p>
+		</header>
 
-        <!-- Engine Selector -->
-        <div class="mb-8 flex justify-center">
-            <div class="inline-flex rounded-lg shadow-sm">
-                <button id="invoice-engine-btn" type="button" class="engine-btn active px-6 py-3 text-sm font-medium rounded-l-lg">Invoice Engine</button>
-                <button id="price-list-engine-btn" type="button" class="engine-btn px-6 py-3 text-sm font-medium rounded-r-lg">Price List Engine</button>
-            </div>
-        </div>
+		<!-- Engine Selector -->
+		<div class="mb-8 flex justify-center">
+			<div class="inline-flex rounded-lg shadow-sm" role="tablist" aria-label="Extraction engine">
+				<button id="invoice-engine-btn" type="button" class="engine-btn active px-6 py-3 text-sm font-medium rounded-l-lg" role="tab" aria-selected="true">Invoice Engine</button>
+				<button id="price-list-engine-btn" type="button" class="engine-btn px-6 py-3 text-sm font-medium rounded-r-lg" role="tab" aria-selected="false">Price List Engine</button>
+			</div>
+		</div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <!-- Left Panel: Upload -->
-            <div class="lg:col-span-3 space-y-8">
-                <div class="bg-white p-6 rounded-xl shadow-md h-full">
-                    <h2 class="text-xl font-bold text-gray-900 mb-4">1. Upload File</h2>
-                    <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" class="hidden">
-                    <label for="file-input" id="upload-box" class="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                        <svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h5l4 4v5a4 4 0 01-4 4H7z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 17.657L13.414 21.9a2 2 0 01-2.827 0L7 17.657M10 14l2-2m0 0l2-2m-2 2v4"></path></svg>
-                        <p class="mb-2 text-sm text-gray-500"><span class="font-semibold">Click to upload</span> or drag & drop</p>
-                        <p class="text-xs text-gray-500">PDF, JPG, PNG</p>
-                    </label>
-                    <div id="status" class="mt-4 text-sm text-center"></div>
-                </div>
-            </div>
+		<div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+			<!-- Left Panel: Upload -->
+			<div class="lg:col-span-3 space-y-8">
+				<div class="bg-white p-6 rounded-xl shadow-md h-full">
+					<h2 class="text-xl font-bold text-gray-900 mb-4">1. Upload File</h2>
+					<input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" class="hidden">
+					<label for="file-input" id="upload-box" class="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+						<svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h5l4 4v5a4 4 0 01-4 4H7z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 17.657L13.414 21.9a2 2 0 01-2.827 0L7 17.657M10 14l2-2m0 0l2-2m-2 2v4"></path></svg>
+						<p class="mb-2 text-sm text-gray-500"><span class="font-semibold">Click to upload</span> or drag & drop</p>
+						<p class="text-xs text-gray-500">PDF, JPG, PNG, WEBP, GIF • up to ~10MB</p>
+					</label>
+					<div id="status" class="mt-4 text-sm text-center text-gray-600">Upload a file to begin.</div>
+				</div>
+			</div>
 
-            <!-- Right Panel: Verify, Edit & Export -->
-            <div class="lg:col-span-9">
-                <div class="bg-white p-6 rounded-xl shadow-md h-full flex flex-col">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-bold text-gray-900">2. Verify & Edit Data</h2>
-                        <div class="flex items-center space-x-2">
-                            <button id="clear-list-btn" class="text-sm bg-red-500 text-white py-1 px-3 rounded-lg hover:bg-red-600 disabled:bg-gray-300" disabled>Clear</button>
-                        </div>
-                    </div>
+			<!-- Right Panel: Verify, Edit & Export -->
+			<div class="lg:col-span-9">
+				<div class="bg-white p-6 rounded-xl shadow-md h-full flex flex-col">
+					<div class="flex justify-between items-center mb-4">
+						<h2 class="text-xl font-bold text-gray-900">2. Verify & Edit Data</h2>
+						<div class="flex items-center space-x-2">
+							<button id="clear-list-btn" class="text-sm bg-red-500 text-white py-1 px-3 rounded-lg hover:bg-red-600 disabled:bg-gray-300" disabled>Clear</button>
+						</div>
+					</div>
 
-                    <!-- Invoice View -->
-                    <div id="invoice-view">
-                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 p-4 border rounded-lg bg-gray-50">
-                            <div><label class="block text-sm font-medium text-gray-700">Invoice #</label><div id="invoice-number" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300"></div></div>
-                            <div><label class="block text-sm font-medium text-gray-700">Date</label><div id="invoice-date" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300"></div></div>
-                            <div><label class="block text-sm font-medium text-gray-700">Due Date</label><div id="invoice-due-date" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300"></div></div>
-                            <div><label class="block text-sm font-medium text-gray-700">Pay Date</label><div id="invoice-pay-date" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300"></div></div>
-                            <div><label class="block text-sm font-medium text-gray-700">Vendor</label><div id="invoice-vendor" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300"></div></div>
-                        </div>
-                        <div id="invoice-table-container" class="overflow-auto max-h-[45vh] flex-grow">
-                             <h3 class="text-lg font-semibold text-gray-800 mb-2">Line Items</h3>
-                             <table class="min-w-full">
-                                <thead class="bg-gray-50 sticky top-0">
-                                    <tr>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Gross Amount</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tax Code</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="invoice-data-table" class="divide-y divide-gray-200">
-                                    <tr><td colspan="7" class="p-4 text-center text-gray-500">Upload an invoice to begin.</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                         <div class="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
-                            <div></div>
-                            <div class="col-span-2 space-y-2 text-right">
-                                <div class="flex justify-between"><span class="font-medium">Subtotal:</span><span id="invoice-subtotal"></span></div>
-                                <div class="flex justify-between"><span class="font-medium">Tax:</span><span id="invoice-tax"></span></div>
-                                <div class="flex justify-between font-bold text-lg"><span class="">Grand Total:</span><span id="invoice-total"></span></div>
-                            </div>
-                        </div>
-                    </div>
+					<!-- Invoice View -->
+					<div id="invoice-view">
+						<div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 p-4 border rounded-lg bg-gray-50">
+							<div><label class="block text-sm font-medium text-gray-700">Invoice #</label><div id="invoice-number" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300" aria-label="Invoice number" inputmode="text"></div></div>
+							<div><label class="block text-sm font-medium text-gray-700">Date</label><div id="invoice-date" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300" aria-label="Invoice date" inputmode="text"></div></div>
+							<div><label class="block text-sm font-medium text-gray-700">Due Date</label><div id="invoice-due-date" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300" aria-label="Due date" inputmode="text"></div></div>
+							<div><label class="block text-sm font-medium text-gray-700">Pay Date</label><div id="invoice-pay-date" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300" aria-label="Pay date" inputmode="text"></div></div>
+							<div><label class="block text-sm font-medium text-gray-700">Vendor</label><div id="invoice-vendor" contenteditable="true" class="mt-1 p-2 border border-transparent rounded-md hover:border-gray-300" aria-label="Vendor" inputmode="text"></div></div>
+						</div>
+						<div id="invoice-table-container" class="overflow-auto max-h-[45vh] flex-grow">
+							<h3 class="text-lg font-semibold text-gray-800 mb-2">Line Items</h3>
+							<table class="min-w-full">
+								<thead class="bg-gray-50 sticky top-0 z-10">
+									<tr>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Gross Amount</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tax Code</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
+									</tr>
+								</thead>
+								<tbody id="invoice-data-table" class="divide-y divide-gray-200">
+									<tr><td colspan="7" class="p-4 text-center text-gray-500">Upload an invoice to begin.</td></tr>
+								</tbody>
+							</table>
+						</div>
+						<div class="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
+							<div></div>
+							<div class="col-span-2 space-y-2 text-right">
+								<div class="flex justify-between"><span class="font-medium">Subtotal:</span><span id="invoice-subtotal"></span></div>
+								<div class="flex justify-between"><span class="font-medium">Tax:</span><span id="invoice-tax"></span></div>
+								<div class="flex justify-between font-bold text-lg"><span class="">Grand Total:</span><span id="invoice-total"></span></div>
+							</div>
+						</div>
+					</div>
 
-                    <!-- Price List View -->
-                    <div id="price-list-view" class="hidden">
-                        <div id="price-list-table-container" class="overflow-auto max-h-[60vh] flex-grow">
-                             <table class="min-w-full">
-                                <thead class="bg-gray-50 sticky top-0">
-                                    <tr>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Carton Price</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">RSP</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="price-list-data-table" class="divide-y divide-gray-200">
-                                    <tr><td colspan="6" class="p-4 text-center text-gray-500">Upload a price list to begin.</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+					<!-- Price List View -->
+					<div id="price-list-view" class="hidden">
+						<div id="price-list-table-container" class="overflow-auto max-h-[60vh] flex-grow">
+							<table class="min-w-full">
+								<thead class="bg-gray-50 sticky top-0 z-10">
+									<tr>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Carton Price</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">RSP</th>
+									</tr>
+								</thead>
+								<tbody id="price-list-data-table" class="divide-y divide-gray-200">
+									<tr><td colspan="6" class="p-4 text-center text-gray-500">Upload a price list to begin.</td></tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
 
-                </div>
-            </div>
-        </div>
-        
-        <!-- Export Panel -->
-        <div class="mt-8">
-            <div class="bg-white p-6 rounded-xl shadow-md">
-                 <h2 class="text-2xl font-bold text-gray-900 mb-4">3. Export</h2>
-                 <p class="text-sm text-gray-600 mb-4">Once you've verified the data, click the button below to download your cleaned data as a CSV file.</p>
-                 <button id="export-btn" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 text-lg" disabled>Export to CSV</button>
-            </div>
-        </div>
-    </div>
-    
-    <script type="module">
-        // --- PDF.js Setup ---
-        const { pdfjsLib } = globalThis;
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://mozilla.github.io/pdf.js/build/pdf.worker.mjs`;
+				</div>
+			</div>
+		</div>
 
-        // --- State Management ---
-        let currentMode = 'invoice'; // 'invoice' or 'priceList'
-        let extractedData = {}; 
+		<!-- Export Panel -->
+		<div class="mt-8">
+			<div class="bg-white p-6 rounded-xl shadow-md">
+				<h2 class="text-2xl font-bold text-gray-900 mb-4">3. Export</h2>
+				<p class="text-sm text-gray-600 mb-4">Once you've verified the data, click the button below to download your cleaned data as a CSV file.</p>
+				<button id="export-btn" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 text-lg" disabled>Export to CSV</button>
+			</div>
+		</div>
+	</div>
 
-        // --- DOM References ---
-        const dom = {
-            uploadBox: document.getElementById('upload-box'),
-            fileInput: document.getElementById('file-input'),
-            statusEl: document.getElementById('status'),
-            exportBtn: document.getElementById('export-btn'),
-            clearListBtn: document.getElementById('clear-list-btn'),
-            invoiceEngineBtn: document.getElementById('invoice-engine-btn'),
-            priceListEngineBtn: document.getElementById('price-list-engine-btn'),
-            invoiceView: document.getElementById('invoice-view'),
-            priceListView: document.getElementById('price-list-view'),
-            invoiceDataTable: document.getElementById('invoice-data-table'),
-            priceListDataTable: document.getElementById('price-list-data-table'),
-            invoiceNumber: document.getElementById('invoice-number'),
-            invoiceDate: document.getElementById('invoice-date'),
-            invoiceDueDate: document.getElementById('invoice-due-date'),
-            invoicePayDate: document.getElementById('invoice-pay-date'),
-            invoiceVendor: document.getElementById('invoice-vendor'),
-            invoiceSubtotal: document.getElementById('invoice-subtotal'),
-            invoiceTax: document.getElementById('invoice-tax'),
-            invoiceTotal: document.getElementById('invoice-total'),
-        };
+	<script type="module">
+		// --- PDF.js Setup ---
+		const { pdfjsLib } = globalThis;
+		if (pdfjsLib) {
+			pdfjsLib.GlobalWorkerOptions.workerSrc = `https://mozilla.github.io/pdf.js/build/pdf.worker.mjs`;
+		}
 
-        // --- Engine Switching Logic ---
-        dom.invoiceEngineBtn.addEventListener('click', () => switchEngine('invoice'));
-        dom.priceListEngineBtn.addEventListener('click', () => switchEngine('priceList'));
+		// --- State Management ---
+		let currentMode = 'invoice'; // 'invoice' or 'priceList'
+		let extractedData = {};
 
-        function switchEngine(mode) {
-            currentMode = mode;
-            if (mode === 'invoice') {
-                dom.invoiceEngineBtn.classList.add('active');
-                dom.priceListEngineBtn.classList.remove('active');
-                dom.invoiceView.classList.remove('hidden');
-                dom.priceListView.classList.add('hidden');
-            } else {
-                dom.priceListEngineBtn.classList.add('active');
-                dom.invoiceEngineBtn.classList.remove('active');
-                dom.priceListView.classList.remove('hidden');
-                dom.invoiceView.classList.add('hidden');
-            }
-            resetUI();
-        }
+		// --- DOM References ---
+		const dom = {
+			uploadBox: document.getElementById('upload-box'),
+			fileInput: document.getElementById('file-input'),
+			statusEl: document.getElementById('status'),
+			exportBtn: document.getElementById('export-btn'),
+			clearListBtn: document.getElementById('clear-list-btn'),
+			invoiceEngineBtn: document.getElementById('invoice-engine-btn'),
+			priceListEngineBtn: document.getElementById('price-list-engine-btn'),
+			invoiceView: document.getElementById('invoice-view'),
+			priceListView: document.getElementById('price-list-view'),
+			invoiceDataTable: document.getElementById('invoice-data-table'),
+			priceListDataTable: document.getElementById('price-list-data-table'),
+			invoiceNumber: document.getElementById('invoice-number'),
+			invoiceDate: document.getElementById('invoice-date'),
+			invoiceDueDate: document.getElementById('invoice-due-date'),
+			invoicePayDate: document.getElementById('invoice-pay-date'),
+			invoiceVendor: document.getElementById('invoice-vendor'),
+			invoiceSubtotal: document.getElementById('invoice-subtotal'),
+			invoiceTax: document.getElementById('invoice-tax'),
+			invoiceTotal: document.getElementById('invoice-total'),
+		};
 
-        // --- File Upload Handling ---
-        dom.fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
-        dom.uploadBox.addEventListener('dragover', (e) => { e.preventDefault(); dom.uploadBox.classList.add('dragover'); });
-        dom.uploadBox.addEventListener('dragleave', () => dom.uploadBox.classList.remove('dragover'));
-        dom.uploadBox.addEventListener('drop', (e) => { e.preventDefault(); dom.uploadBox.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
-        
-        async function handleFile(file) {
-            if (!file) return;
-            resetUI();
-            if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-                await processWithAI(file);
-            } else {
-                handleError('Unsupported file type.');
-            }
-        }
-        
-        function resetUI() {
-            extractedData = {};
-            dom.statusEl.textContent = 'Upload a file to begin.';
-            dom.invoiceDataTable.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">Upload an invoice to begin.</td></tr>';
-            dom.priceListDataTable.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Upload a price list to begin.</td></tr>';
-            dom.invoiceNumber.textContent = '';
-            dom.invoiceDate.textContent = '';
-            dom.invoiceDueDate.textContent = '';
-            dom.invoicePayDate.textContent = '';
-            dom.invoiceVendor.textContent = '';
-            dom.invoiceSubtotal.textContent = '';
-            dom.invoiceTax.textContent = '';
-            dom.invoiceTotal.textContent = '';
-            dom.exportBtn.disabled = true;
-            dom.clearListBtn.disabled = true;
-            dom.fileInput.value = '';
-        }
+		// --- Engine Switching Logic ---
+		dom.invoiceEngineBtn.addEventListener('click', () => switchEngine('invoice'));
+		dom.priceListEngineBtn.addEventListener('click', () => switchEngine('priceList'));
 
-        async function processWithAI(file) {
-            dom.statusEl.textContent = `Analyzing with AI...`;
-            if (currentMode === 'invoice') {
-                dom.invoiceDataTable.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
-            } else {
-                dom.priceListDataTable.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
-            }
+		function switchEngine(mode) {
+			currentMode = mode;
+			if (mode === 'invoice') {
+				dom.invoiceEngineBtn.classList.add('active');
+				dom.invoiceEngineBtn.setAttribute('aria-selected', 'true');
+				dom.priceListEngineBtn.classList.remove('active');
+				dom.priceListEngineBtn.setAttribute('aria-selected', 'false');
+				dom.invoiceView.classList.remove('hidden');
+				dom.priceListView.classList.add('hidden');
+			} else {
+				dom.priceListEngineBtn.classList.add('active');
+				dom.priceListEngineBtn.setAttribute('aria-selected', 'true');
+				dom.invoiceEngineBtn.classList.remove('active');
+				dom.invoiceEngineBtn.setAttribute('aria-selected', 'false');
+				dom.priceListView.classList.remove('hidden');
+				dom.invoiceView.classList.add('hidden');
+			}
+			resetUI();
+		}
 
-            const base64ImageData = await toBase64(file);
-            const mimeType = file.type;
-            
-            let prompt, modelName;
+		// --- File Upload Handling ---
+		dom.fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+		dom.uploadBox.addEventListener('dragover', (e) => { e.preventDefault(); dom.uploadBox.classList.add('dragover'); });
+		dom.uploadBox.addEventListener('dragleave', () => dom.uploadBox.classList.remove('dragover'));
+		dom.uploadBox.addEventListener('drop', (e) => { e.preventDefault(); dom.uploadBox.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
 
-            if (currentMode === 'invoice') {
-                modelName = 'gemini-pro-vision';
-                prompt = "Analyze this document as an invoice. Extract the invoice number, date, due date, pay date, vendor name, all line items, subtotal, tax, and grandTotal. For each line item, extract the description, quantity, unit price, tax code, location, and item barcode. Return ONLY the raw JSON object text, with no other words or explanations. All price/cost/total fields should be numbers.";
-            } else { // Price List Mode
-                modelName = 'gemini-pro-vision';
-                prompt = "Analyze this document as a product price list. Extract all items into a JSON array. Each object should represent a single product and include these keys: 'barcode', 'description', 'unitPrice', 'cartonPrice' (look for a header like 'CTN PRICE'), and 'recommendedSellingPrice' (look for a header like 'RSP'). If a value isn't present, use an empty string or null. Prices should be numbers. Return ONLY the raw JSON array text, with no other words or explanations.";
-            }
+		async function handleFile(file) {
+			if (!file) return;
+			resetUI();
+			if (file.size > 10 * 1024 * 1024) {
+				handleError('File too large. Please use a file under 10MB.');
+				return;
+			}
+			if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+				// Choose Cloud AI or Local OCR
+				const apiKey = "YOUR_API_KEY_HERE"; // leave as placeholder; do not place a real key here
+				if (!apiKey || apiKey === "YOUR_API_KEY_HERE") {
+					await processWithLocalOcr(file);
+				} else {
+					await processWithAI(file, apiKey);
+				}
+			} else {
+				handleError('Unsupported file type.');
+			}
+		}
 
-            const payload = {
-                contents: [{ 
-                    parts: [ 
-                        { text: prompt }, 
-                        { inlineData: { mimeType: mimeType, data: base64ImageData } } 
-                    ] 
-                }]
-            };
+		function resetUI() {
+			extractedData = {};
+			dom.statusEl.textContent = 'Upload a file to begin.';
+			dom.invoiceDataTable.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">Upload an invoice to begin.</td></tr>';
+			dom.priceListDataTable.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Upload a price list to begin.</td></tr>';
+			dom.invoiceNumber.textContent = '';
+			dom.invoiceDate.textContent = '';
+			dom.invoiceDueDate.textContent = '';
+			dom.invoicePayDate.textContent = '';
+			dom.invoiceVendor.textContent = '';
+			dom.invoiceSubtotal.textContent = '';
+			dom.invoiceTax.textContent = '';
+			dom.invoiceTotal.textContent = '';
+			dom.exportBtn.disabled = true;
+			dom.clearListBtn.disabled = true;
+			dom.fileInput.value = '';
+		}
 
-            try {
-                const apiKey = "AIzaSyBQHWkld856qR-n7p9qT8qVxxIpU5BXEpQ"; // <-- PASTE YOUR KEY HERE
-                if (apiKey === "YOUR_API_KEY_HERE" || !apiKey) {
-                    handleError("API Key is missing. Please add your key to the script.");
-                    return;
-                }
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+		// --- Utilities ---
+		const toBase64 = (file) => new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.readAsDataURL(file);
+			reader.onload = () => resolve(String(reader.result).split(',')[1]);
+			reader.onerror = (error) => reject(error);
+		});
 
-                if (!response.ok) {
-                    const errorBody = await response.text();
-                    throw new Error(`API Error (${response.status}): ${errorBody}`);
-                }
-                
-                const result = await response.json();
-                
-                if (!result.candidates || !result.candidates[0].content || !result.candidates[0].content.parts[0]) {
-                    throw new Error("Invalid response structure from AI.");
-                }
+		function parseNumber(text) {
+			if (text == null) return 0;
+			const cleaned = String(text).replace(/[^0-9.\-]/g, '');
+			const value = Number(cleaned);
+			return Number.isFinite(value) ? value : 0;
+		}
 
-                // Clean the response text to ensure it's valid JSON
-                let text = result.candidates[0].content.parts[0].text;
-                text = text.trim().replace(/^```json\s*/, '').replace(/```$/, '');
+		function handleError(message) {
+			dom.statusEl.textContent = message;
+			const html = `<tr><td colspan="${currentMode === 'invoice' ? 7 : 6}" class="p-4 text-center text-red-500">${message}</td></tr>`;
+			if (currentMode === 'invoice') {
+				dom.invoiceDataTable.innerHTML = html;
+			} else {
+				dom.priceListDataTable.innerHTML = html;
+			}
+			dom.exportBtn.disabled = true;
+		}
 
-                extractedData = JSON.parse(text);
-                
-                dom.statusEl.textContent = `Extraction complete. Please verify.`;
-                if (currentMode === 'invoice') {
-                    renderInvoiceView();
-                } else {
-                    renderPriceListTable();
-                }
-                dom.exportBtn.disabled = false;
-                dom.clearListBtn.disabled = false;
+		function safeText(t) {
+			return t == null ? '' : String(t);
+		}
 
-            } catch (error) {
-                const errorMessage = error.message || 'An unknown error occurred.';
-                handleError(`AI analysis failed: ${errorMessage}`);
-                console.error("AI Error:", error);
-            }
-        }
+		function extractJsonText(raw) {
+			if (!raw) return null;
+			const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+			try { return JSON.parse(text); } catch (_) {}
+			const objStart = text.indexOf('{');
+			const arrStart = text.indexOf('[');
+			let start = -1;
+			let end = -1;
 
-        const toBase64 = file => new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = error => reject(error);
-        });
-        
-        function handleError(message) {
-            dom.statusEl.textContent = message;
-            if (currentMode === 'invoice') {
-                dom.invoiceDataTable.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">${message}</td></tr>`;
-            } else {
-                dom.priceListDataTable.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">${message}</td></tr>`;
-            }
-        }
-        
-        function renderInvoiceView() {
-            dom.invoiceNumber.textContent = extractedData.invoiceNumber || '';
-            dom.invoiceDate.textContent = extractedData.date || '';
-            dom.invoiceDueDate.textContent = extractedData.dueDate || '';
-            dom.invoicePayDate.textContent = extractedData.payDate || '';
-            dom.invoiceVendor.textContent = extractedData.vendor || '';
+			function findMatching(str, openChar, closeChar, startIdx) {
+				let depth = 0;
+				for (let i = startIdx; i < str.length; i++) {
+					if (str[i] === openChar) depth++;
+					if (str[i] === closeChar) {
+						depth--;
+						if (depth === 0) return i + 1;
+					}
+				}
+				return -1;
+			}
 
-            dom.invoiceDataTable.innerHTML = '';
-            if (!extractedData.lineItems || extractedData.lineItems.length === 0) {
-                dom.invoiceDataTable.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">No line items found.</td></tr>';
-            } else {
-                extractedData.lineItems.forEach(item => {
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-gray-50';
-                    const unitPrice = parseFloat(item.unitPrice) || 0;
-                    const quantity = parseInt(item.quantity) || 0;
-                    const grossAmount = quantity * unitPrice;
-                    row.innerHTML = `
-                        <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${item.description || ''}</div></td>
-                        <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${item.itemBarcode || ''}</div></td>
-                        <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${quantity}</div></td>
-                        <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${unitPrice.toFixed(2)}</div></td>
-                        <td class="p-2 border-b border-gray-200 p-1">${grossAmount.toFixed(2)}</td>
-                        <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${item.taxCode || ''}</div></td>
-                        <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${item.location || ''}</div></td>
-                    `;
-                    dom.invoiceDataTable.appendChild(row);
-                });
-            }
-            
-            dom.invoiceSubtotal.textContent = (extractedData.subtotal || 0).toFixed(2);
-            dom.invoiceTax.textContent = (extractedData.tax || 0).toFixed(2);
-            dom.invoiceTotal.textContent = (extractedData.grandTotal || 0).toFixed(2);
-        }
+			if (objStart !== -1 && (arrStart === -1 || objStart < arrStart)) {
+				start = objStart;
+				end = findMatching(text, '{', '}', objStart);
+			} else if (arrStart !== -1) {
+				start = arrStart;
+				end = findMatching(text, '[', ']', arrStart);
+			}
+			if (start !== -1 && end !== -1) {
+				const slice = text.slice(start, end);
+				try { return JSON.parse(slice); } catch (_) {}
+			}
+			return null;
+		}
 
-        function renderPriceListTable() {
-            dom.priceListDataTable.innerHTML = '';
-            if (!extractedData || extractedData.length === 0) {
-                dom.priceListDataTable.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">No items found.</td></tr>';
-                return;
-            }
-            extractedData.forEach((item, index) => {
-                const row = document.createElement('tr');
-                row.className = 'hover:bg-gray-50';
-                row.innerHTML = `
-                    <td class="p-2 border-b border-gray-200 text-sm text-gray-500">${index + 1}</td>
-                    <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${item.barcode || ''}</div></td>
-                    <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${item.description || ''}</div></td>
-                    <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${(item.unitPrice || 0).toFixed(2)}</div></td>
-                    <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${(item.cartonPrice || 0).toFixed(2)}</div></td>
-                    <td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${(item.recommendedSellingPrice || 0).toFixed(2)}</div></td>
-                `;
-                dom.priceListDataTable.appendChild(row);
-            });
-        }
+		async function renderPdfToImages(file, maxPages = 3, scale = 1.8) {
+			if (!pdfjsLib) throw new Error('PDF.js not loaded.');
+			const arrayBuffer = await file.arrayBuffer();
+			const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+			const pageCount = Math.min(pdf.numPages, maxPages);
+			const images = [];
+			for (let i = 1; i <= pageCount; i++) {
+				const page = await pdf.getPage(i);
+				const viewport = page.getViewport({ scale });
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				canvas.width = viewport.width;
+				canvas.height = viewport.height;
+				await page.render({ canvasContext: ctx, viewport }).promise;
+				const dataUrl = canvas.toDataURL('image/png', 0.92);
+				images.push(dataUrl.split(',')[1]); // base64 only
+			}
+			return images;
+		}
 
-        dom.clearListBtn.addEventListener('click', () => {
-            resetUI();
-            dom.statusEl.textContent = 'List cleared. Upload a new file.';
-        });
+		function enableActions() {
+			dom.exportBtn.disabled = false;
+			dom.clearListBtn.disabled = false;
+		}
 
-        // --- CSV Export ---
-        dom.exportBtn.addEventListener('click', () => {
-            let csvContent = "data:text/csv;charset=utf-8,";
-            if (currentMode === 'invoice') {
-                const headers = [
-                    "Invoice Number", "Date", "Due Date", "Pay Date", "Vendor",
-                    "Item Description", "Item Barcode", "Quantity", "Unit Price", "Gross Amount", "Tax Code", "Location"
-                ];
-                csvContent += headers.join(',') + "\r\n";
+		// --- Local OCR Path (no API key needed) ---
+		async function processWithLocalOcr(file) {
+			dom.statusEl.textContent = 'Running local OCR...';
+			if (currentMode === 'invoice') {
+				dom.invoiceDataTable.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
+			} else {
+				dom.priceListDataTable.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
+			}
 
-                const invoiceDetails = [ dom.invoiceNumber.innerText, dom.invoiceDate.innerText, dom.invoiceDueDate.innerText, dom.invoicePayDate.innerText, dom.invoiceVendor.innerText ];
-                const rows = dom.invoiceDataTable.querySelectorAll('tr');
-                if(rows.length > 0 && rows[0].querySelectorAll('td').length > 1) {
-                    rows.forEach(row => {
-                        const cells = row.querySelectorAll('td');
-                        if (cells.length === 0) return;
-                        const lineItemData = [ cells[0].innerText, cells[1].innerText, cells[2].innerText, cells[3].innerText, cells[4].innerText, cells[5].innerText, cells[6].innerText ];
-                        const fullRowData = invoiceDetails.concat(lineItemData);
-                        const csvRow = fullRowData.map(d => `"${String(d).replace(/"/g, '""')}"`).join(',');
-                        csvContent += csvRow + "\r\n";
-                    });
-                } else {
-                    const emptyLineItem = Array(7).fill('');
-                    const fullRowData = invoiceDetails.concat(emptyLineItem);
-                    const csvRow = fullRowData.map(d => `"${String(d).replace(/"/g, '""')}"`).join(',');
-                    csvContent += csvRow + "\r\n";
-                }
-            } else { // Price List Mode
-                const headers = ["#", "Barcode", "Description", "Unit Price", "Carton Price", "RSP"];
-                csvContent += headers.join(',') + "\r\n";
-                const rows = dom.priceListDataTable.querySelectorAll('tr');
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length === 0) return;
-                    const rowData = [ cells[0].innerText, cells[1].innerText, cells[2].innerText, cells[3].innerText, cells[4].innerText, cells[5].innerText ];
-                    const csvRow = rowData.map(d => `"${String(d).replace(/"/g, '""')}"`).join(',');
-                    csvContent += csvRow + "\r\n";
-                });
-            }
+			try {
+				let images = [];
+				if (file.type === 'application/pdf') {
+					const pageImages = await renderPdfToImages(file, 3, 1.8);
+					images = pageImages.map(b64 => ({ mime: 'image/png', b64 }));
+				} else {
+					const b64 = await toBase64(file);
+					images = [{ mime: file.type || 'image/png', b64 }];
+				}
 
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `${currentMode}_data_${new Date().toISOString().slice(0,10)}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        });
-        
-    </script>
+				let fullText = '';
+				for (const img of images) {
+					const dataUrl = `data:${img.mime};base64,${img.b64}`;
+					const { data } = await Tesseract.recognize(dataUrl, 'eng');
+					fullText += '\n' + (data?.text || '');
+				}
+
+				if (currentMode === 'invoice') {
+					extractedData = naiveInvoiceParser(fullText);
+					renderInvoiceView();
+				} else {
+					extractedData = naivePriceListParser(fullText);
+					renderPriceListTable();
+				}
+
+				dom.statusEl.textContent = 'Local OCR complete. Please verify.';
+				enableActions();
+			} catch (e) {
+				handleError(`Local OCR failed: ${e.message}`);
+			}
+		}
+
+		function naiveInvoiceParser(text) {
+			const get = (re) => (text.match(re)?.[1] || '').trim();
+			const money = (re) => {
+				const m = get(re).match(/[\d.,]+/);
+				return m ? Number(m[0].replace(/,/g, '')) : 0;
+			};
+
+			const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+			const lineItems = [];
+			for (const line of lines) {
+				const m = line.match(/(.+?)\s+(\d+)\s*[xX*]\s*\$?\s*([\d.,]+)/);
+				if (m) {
+					const description = m[1].trim();
+					const quantity = Number(m[2]) || 0;
+					const unitPrice = Number(m[3].replace(/,/g, '')) || 0;
+					lineItems.push({ description, quantity, unitPrice, taxCode: '', location: '', itemBarcode: '' });
+				}
+			}
+
+			const subtotal = money(/Subtotal[:\s]*([^\n]+)/i);
+			const tax = money(/Tax(?:\s*Total)?[:\s]*([^\n]+)/i);
+			const grandTotal = money(/(?:Grand\s*)?Total[:\s]*([^\n]+)/i) || (subtotal + tax);
+
+			return {
+				invoiceNumber: get(/Invoice\s*(?:No\.?|#)[:\s]*([A-Za-z0-9\-]+)/i),
+				date: get(/Date[:\s]*([A-Za-z0-9\/\-.]+)/i),
+				dueDate: get(/Due\s*Date[:\s]*([A-Za-z0-9\/\-.]+)/i),
+				payDate: '',
+				vendor: get(/(?:From|Vendor|Supplier)[:\s]*([^\n]+)/i),
+				lineItems,
+				subtotal,
+				tax,
+				grandTotal
+			};
+		}
+
+		function naivePriceListParser(text) {
+			const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+			const items = [];
+			const price = (s) => s ? Number(s.replace(/[^0-9.]/g, '')) : null;
+
+			for (const line of lines) {
+				const m = line.match(/^(\d{6,})\s+(.+?)\s+(\$?[\d.,]+)(?:\s+(\$?[\d.,]+))?(?:\s+(\$?[\d.,]+))?$/);
+				if (m) {
+					items.push({
+						barcode: m[1],
+						description: m[2],
+						unitPrice: price(m[3]),
+						cartonPrice: price(m[4]),
+						recommendedSellingPrice: price(m[5])
+					});
+				}
+			}
+			return items;
+		}
+
+		// --- Cloud AI Path (uses API key if provided; otherwise local OCR is used) ---
+		async function processWithAI(file, apiKey) {
+			dom.statusEl.textContent = `Analyzing with AI...`;
+			if (currentMode === 'invoice') {
+				dom.invoiceDataTable.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
+			} else {
+				dom.priceListDataTable.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
+			}
+
+			const isPdf = file.type === 'application/pdf';
+			let parts = [];
+
+			try {
+				if (isPdf) {
+					const pageImages = await renderPdfToImages(file, 4, 2);
+					parts = pageImages.map((b64) => ({ inlineData: { mimeType: 'image/png', data: b64 } }));
+				} else {
+					const base64ImageData = await toBase64(file);
+					parts = [{ inlineData: { mimeType: file.type, data: base64ImageData } }];
+				}
+			} catch (e) {
+				handleError(`PDF rendering failed: ${e.message}`);
+				return;
+			}
+
+			let prompt, modelName;
+			if (currentMode === 'invoice') {
+				modelName = 'gemini-1.5-flash';
+				prompt = [
+					"Analyze this document as an invoice.",
+					"Extract: invoiceNumber, date, dueDate, payDate, vendor, lineItems[], subtotal, tax, grandTotal.",
+					"For each line item include: description, quantity, unitPrice, taxCode, location, itemBarcode.",
+					"Return ONLY valid JSON (object). Do not wrap in code fences. Prices as numbers."
+				].join(' ');
+			} else {
+				modelName = 'gemini-1.5-flash';
+				prompt = [
+					"Analyze this document as a product price list.",
+					"Extract an array of products with keys: barcode, description, unitPrice, cartonPrice, recommendedSellingPrice.",
+					"If a value isn't present, use null.",
+					"Return ONLY valid JSON (array). Do not wrap in code fences. Prices as numbers."
+				].join(' ');
+			}
+
+			const payload = {
+				contents: [{
+					parts: [{ text: prompt }, ...parts]
+				}]
+			};
+
+			try {
+				if (!apiKey) {
+					await processWithLocalOcr(file);
+					return;
+				}
+
+				const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload)
+				});
+
+				if (!response.ok) {
+					const errorBody = await response.text();
+					throw new Error(`API Error (${response.status}): ${errorBody}`);
+				}
+
+				const result = await response.json();
+
+				const part = result?.candidates?.[0]?.content?.parts?.[0];
+				const text = part?.text?.trim();
+				const parsed = extractJsonText(text);
+				if (!parsed) {
+					throw new Error('Failed to parse AI response as JSON.');
+				}
+
+				extractedData = parsed;
+				dom.statusEl.textContent = `Extraction complete. Please verify.`;
+				if (currentMode === 'invoice') {
+					renderInvoiceView();
+				} else {
+					renderPriceListTable();
+				}
+				enableActions();
+			} catch (error) {
+				const errorMessage = error?.message || 'An unknown error occurred.';
+				handleError(`AI analysis failed: ${errorMessage}`);
+				console.error("AI Error:", error);
+			}
+		}
+
+		// --- Invoice Rendering & Recalculation ---
+		function renderInvoiceView() {
+			dom.invoiceNumber.textContent = safeText(extractedData.invoiceNumber);
+			dom.invoiceDate.textContent = safeText(extractedData.date);
+			dom.invoiceDueDate.textContent = safeText(extractedData.dueDate);
+			dom.invoicePayDate.textContent = safeText(extractedData.payDate);
+			dom.invoiceVendor.textContent = safeText(extractedData.vendor);
+
+			const items = Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [];
+			dom.invoiceDataTable.innerHTML = '';
+			if (items.length === 0) {
+				dom.invoiceDataTable.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">No line items found.</td></tr>';
+			} else {
+				for (const item of items) {
+					const quantity = parseNumber(item.quantity);
+					const unitPrice = parseNumber(item.unitPrice);
+					const grossAmount = quantity * unitPrice;
+
+					const row = document.createElement('tr');
+					row.className = 'hover:bg-gray-50';
+					row.innerHTML = `
+						<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1" data-field="description">${safeText(item.description)}</div></td>
+						<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1" data-field="itemBarcode">${safeText(item.itemBarcode)}</div></td>
+						<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1" data-field="quantity" inputmode="numeric">${quantity}</div></td>
+						<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1" data-field="unitPrice" inputmode="decimal">${unitPrice.toFixed(2)}</div></td>
+						<td class="p-2 border-b border-gray-200"><div class="p-1" data-field="grossAmount" aria-readonly="true">${grossAmount.toFixed(2)}</div></td>
+						<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1" data-field="taxCode">${safeText(item.taxCode)}</div></td>
+						<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1" data-field="location">${safeText(item.location)}</div></td>
+					`;
+					dom.invoiceDataTable.appendChild(row);
+				}
+			}
+			recomputeInvoiceTotals();
+			attachInvoiceEditHandlers();
+		}
+
+		function attachInvoiceEditHandlers() {
+			dom.invoiceDataTable.addEventListener('input', debounce((e) => {
+				const target = e.target;
+				if (!(target instanceof HTMLElement)) return;
+				const cell = target.closest('[data-field]');
+				if (!cell) return;
+
+				const row = target.closest('tr');
+				if (!row) return;
+
+				const qtyEl = row.querySelector('[data-field="quantity"]');
+				const priceEl = row.querySelector('[data-field="unitPrice"]');
+				const grossEl = row.querySelector('[data-field="grossAmount"]');
+
+				const quantity = parseNumber(qtyEl?.textContent || '');
+				const unitPrice = parseNumber(priceEl?.textContent || '');
+				const gross = quantity * unitPrice;
+
+				if (grossEl) grossEl.textContent = gross.toFixed(2);
+				recomputeInvoiceTotals();
+			}, 150), { once: true }); // attach once; handler persists internally
+		}
+
+		function recomputeInvoiceTotals() {
+			let subtotal = 0;
+			const rows = dom.invoiceDataTable.querySelectorAll('tr');
+			rows.forEach((row) => {
+				const qty = parseNumber(row.querySelector('[data-field="quantity"]')?.textContent || '');
+				const unit = parseNumber(row.querySelector('[data-field="unitPrice"]')?.textContent || '');
+				subtotal += qty * unit;
+			});
+
+			const aiSubtotal = parseNumber(extractedData.subtotal);
+			const aiTax = parseNumber(extractedData.tax);
+			const aiGrand = parseNumber(extractedData.grandTotal);
+
+			const useAiSubtotal = aiSubtotal > 0 && Math.abs(aiSubtotal - subtotal) / Math.max(1, subtotal) < 0.05;
+			const subtotalToUse = useAiSubtotal ? aiSubtotal : subtotal;
+
+			const taxToUse = useAiSubtotal ? aiTax : parseNumber(dom.invoiceTax.textContent || 0);
+			const grandTotalToUse = subtotalToUse + taxToUse;
+
+			dom.invoiceSubtotal.textContent = subtotalToUse.toFixed(2);
+			dom.invoiceTax.textContent = taxToUse.toFixed(2);
+			dom.invoiceTotal.textContent = (aiGrand > 0 ? aiGrand : grandTotalToUse).toFixed(2);
+		}
+
+		function debounce(fn, wait = 150) {
+			let t;
+			return (...args) => {
+				clearTimeout(t);
+				t = setTimeout(() => fn.apply(null, args), wait);
+			};
+		}
+
+		// --- Price List Rendering ---
+		function renderPriceListTable() {
+			const items = Array.isArray(extractedData) ? extractedData : [];
+			dom.priceListDataTable.innerHTML = '';
+			if (items.length === 0) {
+				dom.priceListDataTable.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">No items found.</td></tr>';
+				return;
+			}
+			items.forEach((item, index) => {
+				const row = document.createElement('tr');
+				row.className = 'hover:bg-gray-50';
+				row.innerHTML = `
+					<td class="p-2 border-b border-gray-200 text-sm text-gray-500">${index + 1}</td>
+					<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${safeText(item.barcode)}</div></td>
+					<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${safeText(item.description)}</div></td>
+					<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${parseNumber(item.unitPrice).toFixed(2)}</div></td>
+					<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${parseNumber(item.cartonPrice).toFixed(2)}</div></td>
+					<td class="p-2 border-b border-gray-200"><div contenteditable="true" class="p-1">${parseNumber(item.recommendedSellingPrice).toFixed(2)}</div></td>
+				`;
+				dom.priceListDataTable.appendChild(row);
+			});
+		}
+
+		// --- Clear & Export ---
+		dom.clearListBtn.addEventListener('click', () => {
+			resetUI();
+			dom.statusEl.textContent = 'List cleared. Upload a new file.';
+		});
+
+		dom.exportBtn.addEventListener('click', () => {
+			let rows = [];
+			if (currentMode === 'invoice') {
+				const headers = [
+					"Invoice Number", "Date", "Due Date", "Pay Date", "Vendor",
+					"Item Description", "Item Barcode", "Quantity", "Unit Price", "Gross Amount", "Tax Code", "Location"
+				];
+				rows.push(headers);
+
+				const invoiceDetails = [
+					dom.invoiceNumber.innerText.trim(),
+					dom.invoiceDate.innerText.trim(),
+					dom.invoiceDueDate.innerText.trim(),
+					dom.invoicePayDate.innerText.trim(),
+					dom.invoiceVendor.innerText.trim()
+				];
+
+				const tableRows = dom.invoiceDataTable.querySelectorAll('tr');
+				if (tableRows.length && tableRows[0].querySelectorAll('td').length > 1) {
+					tableRows.forEach((tr) => {
+						const tds = tr.querySelectorAll('td');
+						if (!tds.length) return;
+						rows.push([
+							...invoiceDetails,
+							tds[0]?.innerText.trim() ?? '',
+							tds[1]?.innerText.trim() ?? '',
+							tds[2]?.innerText.trim() ?? '',
+							tds[3]?.innerText.trim() ?? '',
+							tds[4]?.innerText.trim() ?? '',
+							tds[5]?.innerText.trim() ?? '',
+							tds[6]?.innerText.trim() ?? ''
+						]);
+					});
+				} else {
+					rows.push([...invoiceDetails, '', '', '', '', '', '', '']);
+				}
+			} else {
+				const headers = ["#", "Barcode", "Description", "Unit Price", "Carton Price", "RSP"];
+				rows.push(headers);
+				const tableRows = dom.priceListDataTable.querySelectorAll('tr');
+				tableRows.forEach((tr) => {
+					const tds = tr.querySelectorAll('td');
+					if (!tds.length) return;
+					rows.push([
+						tds[0]?.innerText.trim() ?? '',
+						tds[1]?.innerText.trim() ?? '',
+						tds[2]?.innerText.trim() ?? '',
+						tds[3]?.innerText.trim() ?? '',
+						tds[4]?.innerText.trim() ?? '',
+						tds[5]?.innerText.trim() ?? ''
+					]);
+				});
+			}
+
+			const csv = rows.map((r) => r.map((d) => `"${String(d).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+			const blob = new Blob(["\uFEFF", csv], { type: 'text/csv;charset=utf-8;' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${currentMode}_data_${new Date().toISOString().slice(0,10)}.csv`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		});
+	</script>
 </body>
 </html>
-
